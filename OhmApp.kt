@@ -9,22 +9,22 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.TaskStackBuilder
 import com.app.base.Navigator
-import com.app.ohmplug.auth.common.model.AuthRepository
+import com.app.base.network.LiveResponse
 import com.app.ohmplug.about.common.view.AboutActivity
+import com.app.ohmplug.account.view.AccountAndSecurityActivity
+import com.app.ohmplug.auth.common.model.AuthRepository
 import com.app.ohmplug.auth.common.view.AuthActivity
 import com.app.ohmplug.auth.common.view.TermsActivity
 import com.app.ohmplug.common.BizBundleFamilyServiceImpl
-import com.app.base.network.LiveResponse
 import com.app.ohmplug.common.PreferencesHelper
 import com.app.ohmplug.common.analytics.SnowplowTrackerBuilder
 import com.app.ohmplug.home.view.MainActivity
-import com.app.ohmplug.networkdiagnosis.view.NetworkDiagnosisActivity
-import com.app.ohmplug.account.view.AccountAndSecurityActivity
 import com.app.ohmplug.splash.view.SplashActivity
-import com.facebook.drawee.backends.pipeline.Fresco
 import com.mlykotom.valifi.ValiFi
 import com.thingclips.smart.api.MicroContext
+import com.thingclips.smart.api.router.UrlBuilder
 import com.thingclips.smart.api.service.RedirectService
+import com.thingclips.smart.bizbundle.initializer.BizBundleInitializer
 import com.thingclips.smart.commonbiz.bizbundle.family.api.AbsBizBundleFamilyService
 import com.thingclips.smart.home.sdk.ThingHomeSdk
 import com.thingclips.smart.optimus.sdk.ThingOptimusSdk
@@ -53,44 +53,109 @@ class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
         super.onCreate()
         instance = this
         ValiFi.install(applicationContext)
-        Fresco.initialize(this)
-        //ThingHomeSdk.init(this)
-        ThingHomeSdk.setDebugMode(BuildConfig.DEBUG)
-        initTuyaBizBundle()
+        initTuyaNewBizBundle()
+        initSnowplowWithUserId()
 
     }
 
-    
-    private fun initTuyaBizBundle() {
-        ThingHomeSdk.init(this)
-        ThingWrapper.init(
+    private fun initSnowplowWithUserId() {
+        val userId = preferencesHelper.getUserId()
+        if (userId != null) {
+            initSnowPlow(userId)
+        } else if (preferencesHelper.getAccessToken() != null) {
+            repository.getOhmConnectUserId().observeForever {
+                when (it) {
+                    is LiveResponse.Error -> {
+                        initSnowPlow()
+                    }
+                    is LiveResponse.Status -> {}
+                    is LiveResponse.Success -> {
+                        initSnowPlow(it.data?.data?.viewer?.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun initSnowPlow(userId: String? = null) {
+        SnowplowTrackerBuilder.customTrackerInitialization(
+            applicationContext,
+            userId
+        )
+    }
+
+    /* override fun getWorkManagerConfiguration() = Configuration.Builder()
+         .setWorkerFactory(workerFactory)
+         .build()*/
+
+
+    override fun startModule(
+        activity: Activity,
+        modules: Navigator.Modules,
+        bundle: Bundle?,
+        startForResult: Int?,
+        fromNotification: Boolean
+    ) {
+        val intent = Intent()
+        when (modules) {
+            Navigator.Modules.SPLASH -> intent.setClass(activity, SplashActivity::class.java)
+            //Navigator.Modules.ONBOARDING -> intent.setClass(activity, OnboardingActivity::class.java)
+            Navigator.Modules.AUTH -> intent.setClass(activity, AuthActivity::class.java)
+            Navigator.Modules.HOME -> intent.setClass(activity, MainActivity::class.java)
+            Navigator.Modules.ABOUT -> intent.setClass(activity, AboutActivity::class.java)
+            Navigator.Modules.ACCOUNT_SECURITY -> intent.setClass(
+                activity,
+                AccountAndSecurityActivity::class.java
+            )
+            // Navigator.Modules.PROFILE_SETTINGS -> intent.setClass(activity, ProfileSettingsActivity::class.java)
+            //  Navigator.Modules.CHAT -> intent.setClass(activity, ChatActivity::class.java)
+            Navigator.Modules.TERMS -> intent.setClass(activity, TermsActivity::class.java)
+        }
+        if (bundle != null) {
+            intent.putExtras(bundle)
+        }
+        try {
+            if (startForResult == null) {
+                if (fromNotification) {
+                    TaskStackBuilder.create(this).addNextIntentWithParentStack(intent)
+                        .startActivities()
+                } else activity.startActivity(intent)
+            } else {
+                activity.startActivityForResult(intent, startForResult)
+            }
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(
+                this,
+                getString(R.string.this_feature_is_under_development),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    private fun initTuyaNewBizBundle(){
+        BizBundleInitializer.init(
             this,
             { errorCode, urlBuilder ->
                 Log.e(
-                    "router not implement",
+                    "Router not implement",
                     urlBuilder.target + " : " + urlBuilder.params.toString()
                 )
             }
         ) { serviceName -> Log.e("service not implement", serviceName) }
-        ThingOptimusSdk.init(this)
-        ThingWrapper.registerService<AbsBizBundleFamilyService, AbsBizBundleFamilyService>(
+
+        BizBundleInitializer.registerService(
             AbsBizBundleFamilyService::class.java, BizBundleFamilyServiceImpl()
         )
 
-        val service = MicroContext.getServiceManager().findServiceByInterface<RedirectService>(
-            RedirectService::class.java.name
-        )
-        service.registerUrlInterceptor { urlBuilder, interceptorCallback ->
-            //Such as:
-            //Intercept the event of clicking the panel right menu and jump to the custom page with the parameters of urlBuilder
-            //例如：拦截点击面板右上角按钮事件，通过 urlBuilder 的参数跳转至自定义页面
-            // if (urlBuilder.target.equals("panelAction") && urlBuilder.params.getString("action").equals("gotoPanelMore")) {
-            //     interceptorCallback.interceptor("interceptor");
-            //     Log.e("interceptor", urlBuilder.params.toString());
-            // } else {
-            interceptorCallback.onContinue(urlBuilder)
-            // }
-        }
+        val service = MicroContext.getServiceManager().findServiceByInterface(RedirectService::class.java.name) as? RedirectService
+
+        service?.registerUrlInterceptor(object : RedirectService.UrlInterceptor {
+            override fun forUrlBuilder(
+                urlBuilder: UrlBuilder,
+                interceptorCallback: RedirectService.InterceptorCallback
+            ) {
+                interceptorCallback.onContinue(urlBuilder)
+            }
+        })
     }
 
 
