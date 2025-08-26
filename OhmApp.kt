@@ -1,3 +1,4 @@
+
 package com.app.ohmplug
 
 import android.app.Activity
@@ -8,17 +9,15 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.TaskStackBuilder
-import com.app.base.Navigator
-import com.app.base.network.LiveResponse
-import com.app.ohmplug.about.common.view.AboutActivity
-import com.app.ohmplug.account.view.AccountAndSecurityActivity
+import com.app.ohmplug.base.Navigator
+import com.app.ohmplug.base.network.LiveResponse
 import com.app.ohmplug.auth.common.model.AuthRepository
 import com.app.ohmplug.auth.common.view.AuthActivity
 import com.app.ohmplug.auth.common.view.TermsActivity
 import com.app.ohmplug.common.BizBundleFamilyServiceImpl
 import com.app.ohmplug.common.PreferencesHelper
 import com.app.ohmplug.common.analytics.SnowplowTrackerBuilder
-import com.app.ohmplug.home.view.MainActivity
+import com.app.ohmplug.dashboard.view.MainActivity
 import com.app.ohmplug.splash.view.SplashActivity
 import com.mlykotom.valifi.ValiFi
 import com.thingclips.smart.api.MicroContext
@@ -28,7 +27,9 @@ import com.thingclips.smart.bizbundle.initializer.BizBundleInitializer
 import com.thingclips.smart.commonbiz.bizbundle.family.api.AbsBizBundleFamilyService
 import com.thingclips.smart.home.sdk.ThingHomeSdk
 import com.thingclips.smart.optimus.sdk.ThingOptimusSdk
+import com.thingclips.smart.thingpackconfig.PackConfig
 import com.thingclips.smart.wrapper.api.ThingWrapper
+import com.tuya.smart.bizubundle.demo.AppConfig
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -53,6 +54,7 @@ class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
         super.onCreate()
         instance = this
         ValiFi.install(applicationContext)
+        PackConfig.addValueDelegate(AppConfig::class.java)
         initTuyaNewBizBundle()
         initSnowplowWithUserId()
 
@@ -99,16 +101,8 @@ class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
         val intent = Intent()
         when (modules) {
             Navigator.Modules.SPLASH -> intent.setClass(activity, SplashActivity::class.java)
-            //Navigator.Modules.ONBOARDING -> intent.setClass(activity, OnboardingActivity::class.java)
             Navigator.Modules.AUTH -> intent.setClass(activity, AuthActivity::class.java)
             Navigator.Modules.HOME -> intent.setClass(activity, MainActivity::class.java)
-            Navigator.Modules.ABOUT -> intent.setClass(activity, AboutActivity::class.java)
-            Navigator.Modules.ACCOUNT_SECURITY -> intent.setClass(
-                activity,
-                AccountAndSecurityActivity::class.java
-            )
-            // Navigator.Modules.PROFILE_SETTINGS -> intent.setClass(activity, ProfileSettingsActivity::class.java)
-            //  Navigator.Modules.CHAT -> intent.setClass(activity, ChatActivity::class.java)
             Navigator.Modules.TERMS -> intent.setClass(activity, TermsActivity::class.java)
         }
         if (bundle != null) {
@@ -156,6 +150,38 @@ class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
                 interceptorCallback.onContinue(urlBuilder)
             }
         })
+    }
+
+    private fun initTuyaBizBundle() {
+        ThingHomeSdk.init(this)
+        ThingWrapper.init(
+            this,
+            { errorCode, urlBuilder ->
+                Log.e(
+                    "router not implement",
+                    urlBuilder.target + " : " + urlBuilder.params.toString()
+                )
+            }
+        ) { serviceName -> Log.e("service not implement", serviceName) }
+        ThingOptimusSdk.init(this)
+        ThingWrapper.registerService<AbsBizBundleFamilyService, AbsBizBundleFamilyService>(
+            AbsBizBundleFamilyService::class.java, BizBundleFamilyServiceImpl()
+        )
+
+        val service = MicroContext.getServiceManager().findServiceByInterface<RedirectService>(
+            RedirectService::class.java.name
+        )
+        service.registerUrlInterceptor { urlBuilder, interceptorCallback ->
+            //Such as:
+            //Intercept the event of clicking the panel right menu and jump to the custom page with the parameters of urlBuilder
+            //例如：拦截点击面板右上角按钮事件，通过 urlBuilder 的参数跳转至自定义页面
+            // if (urlBuilder.target.equals("panelAction") && urlBuilder.params.getString("action").equals("gotoPanelMore")) {
+            //     interceptorCallback.interceptor("interceptor");
+            //     Log.e("interceptor", urlBuilder.params.toString());
+            // } else {
+            interceptorCallback.onContinue(urlBuilder)
+            // }
+        }
     }
 
 
