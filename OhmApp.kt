@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.os.StrictMode
 import android.util.Log
@@ -26,21 +27,28 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 
 @HiltAndroidApp
-class OhmApp : Application(), Navigator {
+class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
 
     companion object{
         lateinit var instance: OhmApp
     }
 
+    /* @Inject
+     lateinit var workerFactory: HiltWorkerFactory
+ */
     @Inject
     lateinit var repository: AuthRepository
 
     @Inject
     lateinit var preferencesHelper: PreferencesHelper
+
+    @Inject
+    lateinit var okHttpClient: OkHttpClient
 
     override fun onCreate() {
         super.onCreate()
@@ -69,14 +77,16 @@ class OhmApp : Application(), Navigator {
             cacheDir
         }
 
-        CoroutineScope(Dispatchers.Default).launch {
+        CoroutineScope(Dispatchers.IO).launch {
+            val oldPolicy = StrictMode.allowThreadDiskReads()
             try {
                 ThingHomeSdk.init(instance)
             } catch (e: Exception) {
                 Log.e("OhmApp", "Tuya init failed", e)
+            } finally {
+                StrictMode.setThreadPolicy(oldPolicy)
             }
         }
-
         // Init Snowplow a bit later, off main thread
         CoroutineScope(Dispatchers.Default).launch {
             delay(500)
@@ -156,4 +166,20 @@ class OhmApp : Application(), Navigator {
         super.onTerminate()
         ThingHomeSdk.onDestroy()
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level>= 80) {
+            AppCleaner.cleanup(okHttpClient)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+    }
+
 }
