@@ -25,8 +25,13 @@ import com.thingclips.smart.home.sdk.ThingHomeSdk
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import javax.inject.Inject
 
@@ -50,21 +55,33 @@ class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
     @Inject
     lateinit var okHttpClient: OkHttpClient
 
+
+    private val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default
+    )
+
     override fun onCreate() {
         super.onCreate()
         instance = this
 
+        configureFacebook()
+        configureStrictMode()
 
-        // Disable auto Facebook stuff (it will still be available when you log in)
+        appScope.launch {
+            initValiFi()
+            initTuya()
+            initSnowplow()
+        }
+    }
+
+    private fun configureFacebook() {
         FacebookSdk.setAutoInitEnabled(false)
         FacebookSdk.setAdvertiserIDCollectionEnabled(false)
         FacebookSdk.setAutoLogAppEventsEnabled(false)
         FacebookSdk.setCodelessDebugLogEnabled(false)
+    }
 
-        // Setup your other SDKs
-        ValiFi.install(applicationContext)
-
-        // Enable StrictMode in debug builds
+    private fun configureStrictMode() {
         if (BuildConfig.DEBUG) {
             val strictPolicy = StrictMode.ThreadPolicy.Builder()
                 .detectAll()
@@ -72,28 +89,32 @@ class OhmApp : Application(), /*Configuration.Provider,*/ Navigator {
                 .build()
             StrictMode.setThreadPolicy(strictPolicy)
         }
-
-        CoroutineScope(Dispatchers.IO).launch {
-            cacheDir
-        }
-
-        CoroutineScope(Dispatchers.IO).launch {
-            val oldPolicy = StrictMode.allowThreadDiskReads()
-            try {
-                ThingHomeSdk.init(instance)
-            } catch (e: Exception) {
-                Log.e("OhmApp", "Tuya init failed", e)
-            } finally {
-                StrictMode.setThreadPolicy(oldPolicy)
-            }
-        }
-        // Init Snowplow a bit later, off main thread
-        CoroutineScope(Dispatchers.Default).launch {
-            delay(500)
-            initSnowplowWithUserId()
-        }
-
     }
+
+    private suspend fun initValiFi() = withContext(Dispatchers.IO) {
+        runCatching {
+            ValiFi.install(applicationContext)
+        }.onFailure {
+            Log.e("OhmApp", "ValiFi init failed", it)
+        }
+    }
+
+    private suspend fun initTuya() = withContext(Dispatchers.IO) {
+        runCatching {
+            ThingHomeSdk.init(this@OhmApp)
+        }.onFailure {
+            Log.e("OhmApp", "Tuya init failed", it)
+        }
+    }
+
+    private suspend fun initSnowplow() = withContext(Dispatchers.Default) {
+        runCatching {
+            initSnowplowWithUserId()
+        }.onFailure {
+            Log.e("OhmApp", "Snowplow init failed", it)
+        }
+    }
+
 
     private suspend fun initSnowplowWithUserId() {
         val userId = preferencesHelper.getUserId()
