@@ -11,9 +11,25 @@ plugins {
     id 'androidx.navigation.safeargs.kotlin'
 }
 
+def keys = new Properties()
+project.rootProject.file('keys.properties').withInputStream {
+    stream -> keys.load(stream)
+}
 android {
-
-    
+    signingConfigs {
+        dev {
+            storeFile file(keys.getProperty('dev_store_file'))
+            storePassword keys.getProperty('dev_store_password')
+            keyAlias keys.getProperty('dev_key_alias')
+            keyPassword keys.getProperty('dev_key_password')
+        }
+        live {
+            storeFile file(keys.getProperty('live_store_file'))
+            storePassword keys.getProperty('live_store_password')
+            keyAlias keys.getProperty('live_key_alias')
+            keyPassword keys.getProperty('live_key_password')
+        }
+    }
 
     compileSdk 36
     defaultConfig {
@@ -32,25 +48,81 @@ android {
         hilt {
             enableAggregatingTask = true
         }
-      
+        buildConfigField 'String', 'PRIVACY_POLICY', '"https://www.ohmconnect.com/ohmplug/privacy-policy"'
+        buildConfigField 'String', 'ABOUT_OHM_PLUG', '"https://www.ohmconnect.com/about-us"'
+        buildConfigField 'String', 'LICENSE_COMPONENTS', '"https://www.ohmconnect.com/about-us/news"'
+        buildConfigField 'String', 'TERMS_OF_SERVICE', '"https://www.ohmconnect.com/ohmplug/terms-of-service"'
+        buildConfigField 'String', 'CHILDREN_POLICY_PAGE', '"https://www.ohmconnect.com/ohmplug/terms-of-service"'
+        buildConfigField 'String', 'CHANGE_EMAIL_URL', '"https://app.ohmconnect.com/settings/profile"'
 
+        manifestPlaceholders = [
+                facebook_app_id             : "${keys.facebook_app_id}",
+                facebook_client_token       : "${keys.facebook_client_token}",
+                INTERNAL_HOST               : "${keys.getProperty("live_app_scheme")}".concat('.app.tuya.com'),
+                ALEXA_AUTH_INTERNAL_HOST    : "${keys.getProperty("live_app_scheme")}".concat('.applink.smart321.com'),
+                ALEXA_AUTH_INTERNAL_HOST_NEW: "${keys.getProperty("live_app_scheme")}".toLowerCase(Locale.ENGLISH).concat('.applink.smart321.com'),
+                PACKAGE_NAME                : applicationId
+        ]
     }
     buildFeatures {
         dataBinding = true
         viewBinding = true
     }
-
+    flavorDimensions = ["v1"]
+    productFlavors {
+        dev {
+            dimension "v1"
+//            applicationIdSuffix ".dev"
+            versionNameSuffix "-dev"
+            manifestPlaceholders = [
+                    TUYA_SMART_APPKEY: "${keys.dev_tuya_app_key}",
+                    TUYA_SMART_SECRET: "${keys.dev_tuya_secret_key}",
+            ]
+            resValue "string", "google_web_client_id", "${keys.dev_google_web_client_id}"
+            buildConfigField 'String', 'CLIENT_ID', '"107"'
+            buildConfigField 'String', 'CLIENT_SECRET', '"ohmplug1234"'
+            buildConfigField 'String', 'BASE_URL',  "\"${keys.base_url}\""
+        }
+        stage {
+            dimension "v1"
+            applicationIdSuffix ".stage"
+            versionNameSuffix "-stage"
+            manifestPlaceholders = [
+                    TUYA_SMART_APPKEY: "${keys.stage_tuya_app_key}",
+                    TUYA_SMART_SECRET: "${keys.stage_tuya_secret_key}",
+            ]
+            resValue "string", "google_web_client_id", "${keys.stage_google_web_client_id}"
+            resValue "string", "google_action_agent_id", "${keys.stage_google_action_agent_id}"
+            buildConfigField 'String', 'CLIENT_ID', '"107"'
+            buildConfigField 'String', 'CLIENT_SECRET', '"ohmplug1234"'
+            buildConfigField 'String', 'BASE_URL', '"https://cblohm.ngrok.io/"'
+        }
+        live {
+            dimension "v1"
+            manifestPlaceholders = [
+                    TUYA_SMART_APPKEY: "${keys.live_tuya_app_key}",
+                    TUYA_SMART_SECRET: "${keys.live_tuya_secret_key}",
+            ]
+            resValue "string", "google_web_client_id", "${keys.live_google_web_client_id}"
+            resValue "string", "google_action_agent_id", "${keys.live_google_action_agent_id}"
+            buildConfigField 'String', 'CLIENT_ID', "\"${keys.client_id}\""
+            buildConfigField 'String', 'CLIENT_SECRET', "\"${keys.client_secret}\""
+            buildConfigField 'String', 'BASE_URL', "\"${keys.base_url}\""
+        }
+    }
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
             outputFileName = "OhmPlug-${variant.versionName} (${variant.versionCode}).apk"
         }
     }
-
     buildTypes {
         release {
             shrinkResources true
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            productFlavors.dev.signingConfig signingConfigs.dev
+            productFlavors.stage.signingConfig signingConfigs.dev
+            productFlavors.live.signingConfig signingConfigs.live
         }
         debug {
             crunchPngs false
@@ -157,7 +229,7 @@ dependencies {
     implementation 'com.github.happysingh23828:HappyTimer:1.0.1'
     implementation 'ca.antonious:materialdaypicker:0.7.4'
 
-    implementation 'com.snowplowanalytics:snowplow-android-tracker:6.2.0'
+    implementation 'com.snowplowanalytics:snowplow-android-tracker:6.3.0'
 
     implementation "com.thingclips.smart:thingsmart:6.7.3"
 
@@ -166,8 +238,8 @@ dependencies {
     implementation "com.alibaba:fastjson:2.0.58"
 
     implementation 'com.guolindev.permissionx:permissionx:1.8.1'
-    implementation 'com.google.firebase:firebase-crashlytics:20.0.1'
-    implementation 'com.google.firebase:firebase-messaging:25.0.0'
+    implementation 'com.google.firebase:firebase-crashlytics:20.0.3'
+    implementation 'com.google.firebase:firebase-messaging:25.0.1'
     implementation 'com.google.firebase:firebase-analytics-ktx:22.5.0'
 
 
